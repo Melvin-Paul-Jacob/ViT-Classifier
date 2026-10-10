@@ -240,14 +240,13 @@ std = [0.229, 0.224, 0.225]
 A recommended project structure is:
 
 ```text
-vision-transformer/
+src/
 ├── config.py
 ├── dataset.py
 ├── model.py
 ├── train.py
-├── evaluate.py
+├── test.py
 ├── requirements.txt
-├── README.md
 ├── data/
 ├── checkpoints/
 │   └── best_model.pt
@@ -256,6 +255,7 @@ vision-transformer/
         ├── sample_images.png
         ├── training_history.png
         └── predictions.png
+└── README.md
 ```
 
 ### File responsibilities
