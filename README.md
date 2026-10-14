@@ -253,7 +253,7 @@ src/
 └── docs/
     └── images/
         ├── sample_images.png
-        ├── training_history.png
+        ├── tory.png
         └── predictions.png
 └── README.md
 ```
@@ -722,7 +722,7 @@ axes[1].legend()
 
 plt.tight_layout()
 plt.savefig(
-    "docs/images/training_history.png",
+    "docs/images/tory.png",
     dpi=180,
     bbox_inches="tight",
 )
@@ -732,7 +732,7 @@ plt.show()
 Then include the generated figure in this README:
 
 <p align="center">
-  <img src="docs/images/training_history.png" alt="Training history" width="850">
+  <img src="docs/images/train_history.png" alt="Training history" width="850">
 </p>
 
 ---
