@@ -50,12 +50,12 @@ axarr[0].axis("off")
 # Validation image 
 # img1 = dataset.testdataset[10]["image"] 
 # axarr[1].imshow(denormalize(img1)) 
-# axarr[1].set_title("Validation Image") 
+# axarr[1].set_title("Test Image") 
 # axarr[1].axis("off") 
 # Test image 
 img2 = dataset.valdataset[6]["image"] 
 axarr[2].imshow(denormalize(img2)) 
-axarr[2].set_title("Test Image") 
+axarr[2].set_title("Val Image") 
 axarr[2].axis("off") 
 plt.tight_layout() 
 plt.show()
@@ -161,19 +161,19 @@ for epoch in range(config.epochs):
             batch_size = label.size(0)
 
             valid_running_loss += loss.item() * batch_size
-            val_total += batch_size
+            valid_total += batch_size
 
             preds = y_pred.argmax(dim=1) 
             valid_correct += (preds == label).sum().item() 
 
-            current_val_loss = valid_running_loss / val_total
-            current_val_accuracy = valid_correct / val_total
+            current_val_loss = valid_running_loss / valid_total
+            current_val_accuracy = valid_correct / valid_total
 
             val_bar.set_postfix(loss=f"{current_val_loss:.4f}", 
                                 acc=f"{current_val_accuracy:.4f}")
 
-    val_loss = valid_running_loss / val_total
-    val_accuracy = valid_correct / val_total
+    val_loss = valid_running_loss / valid_total
+    val_accuracy = valid_correct / valid_total
 
     current_lr = optimizer.param_groups[0]["lr"]
 
