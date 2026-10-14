@@ -732,7 +732,7 @@ plt.show()
 Then include the generated figure in this README:
 
 <p align="center">
-  <img src="docs/images/train_history.png" alt="Training history" width="850">
+  <img src="src/docs/images/train_history.png" alt="Training history" width="850">
 </p>
 
 ---
