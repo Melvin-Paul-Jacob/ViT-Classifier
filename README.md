@@ -9,8 +9,15 @@ A from-scratch implementation of a **Vision Transformer (ViT)** for image classi
 ## Table of Contents
 
 - [Overview](#overview)
+- [Project Overview](#project-overview)
+  - [Processing Flow](#processing-flow)
 - [Model Architecture](#model-architecture)
-- [Dataset and Preprocessing](#dataset-and-preprocessing)
+  - [Multi-Head Self-Attention](#multi-head-self-attention)
+  - [Tensor Shapes](#tensor-shapes)
+- [Data Pipeline](#data-pipeline)
+  - [Training Transformations](#training-transformations)
+  - [Validation Transformations](#validation-transformations)
+  - [ImageNet Normalization](#imagenet-normalization)
 - [Project Structure](#project-structure)
 - [Installation](#installation)
 - [Configuration](#configuration)
@@ -19,7 +26,8 @@ A from-scratch implementation of a **Vision Transformer (ViT)** for image classi
 - [Results](#results)
 - [Future Improvements](#future-improvements)
 - [Acknowledgements](#acknowledgements)
-
+- [License](#license)
+- [Contributing](#contributing)
 ---
 
 ## Overview
@@ -36,49 +44,197 @@ This project implements the core ViT components from scratch:
 - Training and validation pipelines
 - Data augmentation and learning-rate scheduling
 
-### Model workflow
+## Project overview
+
+A Vision Transformer converts an input image into a sequence of non-overlapping image patches. Each patch is projected into an embedding vector and processed as a token by a Transformer encoder.
+
+For an input image with dimensions:
+
+```text
+(B, C, H, W)
+```
+
+and patch size `P`, the number of image patches is:
+
+```text
+N = (H / P) × (W / P)
+```
+
+A learnable classification token is prepended to the patch sequence, resulting in:
+
+```text
+(B, N + 1, embedding_dimension)
+```
+
+The final representation of the classification token is passed through a linear classification head.
+
+### Processing flow
 
 ```mermaid
 flowchart LR
-    A["Input Image"] --> B["Patch Embedding"]
-    B --> C["Add CLS Token and Positions"]
-    C --> D["Transformer Encoder"]
-    D --> E["Extract CLS Token"]
-    E --> F["Classification Head"]
-    F --> G["Class Predictions"]
+    A["Input image<br/>B × C × H × W"]
+    B["Patch projection<br/>Conv2d"]
+    C["Flatten patches<br/>B × N × D"]
+    D["Add CLS token"]
+    E["Add positional embeddings"]
+    F["Transformer encoder"]
+    G["Select CLS representation"]
+    H["LayerNorm + Linear"]
+    I["Class logits<br/>B × number of classes"]
+
+    A --> B --> C --> D --> E --> F --> G --> H --> I
 ```
 
-## Model Architecture
+---
 
-The model follows a pre-normalization Transformer design. Each encoder block contains multi-head self-attention, an MLP, layer normalization, and residual connections.
+## Model architecture
 
-For an input image of size 224 × 224 with a patch size of 16 × 16:
+The model uses a pre-normalization Transformer architecture. Layer normalization is applied before self-attention and before the MLP.
 
-- Number of image patches: 196
-- Number of tokens, including the CLS token: 197
-- Output: scores for 10 Imagenette classes
+```mermaid
+flowchart TD
+    A["Embedded token sequence"]
+    B["LayerNorm"]
+    C["Multi-head self-attention"]
+    D["Residual addition"]
+    E["LayerNorm"]
+    F["MLP<br/>Linear → GELU → Linear"]
+    G["Residual addition"]
+    H["Next encoder layer"]
 
-The classification token's final representation is passed to a linear layer to predict the image category.
+    A --> B --> C --> D
+    A --> D
+    D --> E --> F --> G
+    D --> G
+    G --> H
+```
 
-## Dataset and Preprocessing
+Each encoder block computes:
 
-The project uses [Imagenette](https://github.com/fastai/imagenette) through `torchvision.datasets.Imagenette`.
+```text
+x = x + Attention(LayerNorm(x))
+x = x + MLP(LayerNorm(x))
+```
 
-The dataset contains 10 ImageNet categories, including tench, English springer, cassette player, church, golf ball, and parachute.
+### Multi-head self-attention
 
-**Training preprocessing**
-- Random resized crop
-- Random horizontal flip
-- Color jitter
-- Random rotation
-- ImageNet normalization
+The input is projected into queries, keys, and values:
 
-**Validation preprocessing**
-- Image resizing
-- Conversion to tensor
-- ImageNet normalization
+```text
+Q = XWq
+K = XWk
+V = XWv
+```
 
-Training augmentations help improve generalization, while deterministic validation preprocessing supports consistent evaluation.
+Scaled dot-product attention is then calculated as:
+
+```text
+Attention(Q, K, V) = softmax(QKᵀ / √d_head)V
+```
+
+```mermaid
+flowchart LR
+    X["Input tokens"]
+    Q["Query projection"]
+    K["Key projection"]
+    V["Value projection"]
+    S["QKᵀ / √d_head"]
+    SM["Softmax"]
+    AV["Attention × V"]
+    M["Merge heads"]
+    O["Output projection"]
+
+    X --> Q --> S
+    X --> K --> S
+    S --> SM --> AV
+    X --> V --> AV
+    AV --> M --> O
+```
+
+### Tensor shapes
+
+Assuming:
+
+- Batch size: `B`
+- Number of tokens: `T`
+- Embedding dimension: `D`
+- Number of attention heads: `H`
+- Per-head dimension: `Dh = D / H`
+
+The principal tensor shapes are:
+
+| Stage | Shape |
+|---|---:|
+| Input image | `(B, C, image_size, image_size)` |
+| Patch projection | `(B, D, patches_per_side, patches_per_side)` |
+| Flattened patches | `(B, D, N)` |
+| Transposed patches | `(B, N, D)` |
+| CLS token | `(B, 1, D)` |
+| Transformer input | `(B, N + 1, D)` |
+| Query/key/value | `(B, H, N + 1, Dh)` |
+| Attention matrix | `(B, H, N + 1, N + 1)` |
+| Encoder output | `(B, N + 1, D)` |
+| CLS representation | `(B, D)` |
+| Class logits | `(B, number_of_classes)` |
+
+The embedding dimension must be divisible by the number of attention heads:
+
+```python
+assert config.embd_dim % config.num_heads == 0
+```
+
+---
+
+## Data pipeline
+
+The project uses [`torchvision.datasets.Imagenette`](https://pytorch.org/vision/stable/generated/torchvision.datasets.Imagenette.html).
+
+Imagenette contains ten easily classified ImageNet categories.
+
+### Training transformations
+
+The training pipeline applies:
+
+1. Resize
+2. Random resized crop
+3. Random horizontal flip
+4. Color jitter
+5. Random rotation
+6. Conversion to tensor
+7. ImageNet normalization
+
+```mermaid
+flowchart LR
+    A["Source image"]
+    B["Random resized crop"]
+    C["Horizontal flip"]
+    D["Color jitter"]
+    E["Random rotation"]
+    F["ToTensor"]
+    G["ImageNet normalization"]
+    H["Training tensor"]
+
+    A --> B --> C --> D --> E --> F --> G --> H
+```
+
+### Validation transformations
+
+Validation images use deterministic preprocessing:
+
+1. Resize
+2. Conversion to tensor
+3. ImageNet normalization
+
+This ensures that validation measurements are reproducible and unaffected by random data augmentation.
+
+### ImageNet normalization
+
+```python
+mean = [0.485, 0.456, 0.406]
+std = [0.229, 0.224, 0.225]
+```
+
+---
 
 ## Project Structure
 
